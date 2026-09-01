@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="FastBulkProcessor.Tests/FastBulkProcessor.Tests.csproj" />
+  <Project Path="FastBulkProcessor/FastBulkProcessor.csproj" />
+</Solution>

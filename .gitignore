@@ -1,0 +1,38 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+
+# Test and benchmark output
+[Tt]est[Rr]esult*/
+coverage/
+coverage*.xml
+*.coverage
+*.coveragexml
+BenchmarkDotNet.Artifacts/
+
+# NuGet package output and caches
+*.nupkg
+*.snupkg
+packages/
+
+# Visual Studio and Rider user settings
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# VS Code local settings
+.vscode/
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+secrets.json
+
+# Operating system files
+.DS_Store
+Thumbs.db
