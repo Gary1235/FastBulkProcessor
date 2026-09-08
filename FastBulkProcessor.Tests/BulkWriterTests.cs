@@ -53,6 +53,112 @@ public class BulkWriterTests
         Assert.True(session.IsDisposed);
     }
 
+    [Fact]
+    public async Task WriteAsync_成功寫入剛好十萬筆_輸出一筆區間統計()
+    {
+        var session = new CompletedBulkWriteSession();
+        var sessionFactory = new TrackingBulkWriteSessionFactory(session);
+        var sut = new BulkWriter<int>(sessionFactory);
+        using var output = new StringWriter();
+        var originalOutput = Console.Out;
+
+        try
+        {
+            Console.SetOut(output);
+            await sut.WriteAsync(ReadSingleBatchAsync(100_000));
+        }
+        finally
+        {
+            Console.SetOut(originalOutput);
+        }
+
+        Assert.Matches(
+            @"^\[FastBulkProcessor\] CompletedRows=100000; ElapsedMs=\d+(\.\d+)?; RowsPerSecond=\d+(\.\d+)?\r?\n$",
+            output.ToString());
+    }
+
+    [Fact]
+    public async Task WriteAsync_成功結束但不足十萬筆_輸出實際筆數的區間統計()
+    {
+        var session = new CompletedBulkWriteSession();
+        var sessionFactory = new TrackingBulkWriteSessionFactory(session);
+        var sut = new BulkWriter<int>(sessionFactory);
+        using var output = new StringWriter();
+        var originalOutput = Console.Out;
+
+        try
+        {
+            Console.SetOut(output);
+            await sut.WriteAsync(ReadSingleBatchAsync(99_999));
+        }
+        finally
+        {
+            Console.SetOut(originalOutput);
+        }
+
+        Assert.Matches(
+            @"^\[FastBulkProcessor\] CompletedRows=99999; ElapsedMs=\d+(\.\d+)?; RowsPerSecond=\d+(\.\d+)?\r?\n$",
+            output.ToString());
+    }
+
+    [Fact]
+    public async Task WriteAsync_批次跨過十萬筆門檻_輸出實際完成筆數的區間統計()
+    {
+        var session = new CompletedBulkWriteSession();
+        var sessionFactory = new TrackingBulkWriteSessionFactory(session);
+        var sut = new BulkWriter<int>(sessionFactory);
+        using var output = new StringWriter();
+        var originalOutput = Console.Out;
+
+        try
+        {
+            Console.SetOut(output);
+            await sut.WriteAsync(ReadBatchesAsync(
+                Enumerable.Range(1, 99_000).ToArray(),
+                Enumerable.Range(99_001, 2_000).ToArray()));
+        }
+        finally
+        {
+            Console.SetOut(originalOutput);
+        }
+
+        Assert.Matches(
+            @"^\[FastBulkProcessor\] CompletedRows=101000; ElapsedMs=\d+(\.\d+)?; RowsPerSecond=\d+(\.\d+)?\r?\n$",
+            output.ToString());
+    }
+
+    [Fact]
+    public async Task WriteAsync_完成多個區間與最後剩餘資料_分別輸出各區間統計()
+    {
+        var session = new CompletedBulkWriteSession();
+        var sessionFactory = new TrackingBulkWriteSessionFactory(session);
+        var sut = new BulkWriter<int>(sessionFactory);
+        using var output = new StringWriter();
+        var originalOutput = Console.Out;
+
+        try
+        {
+            Console.SetOut(output);
+            await sut.WriteAsync(ReadBatchesAsync(
+                Enumerable.Range(1, 100_000).ToArray(),
+                Enumerable.Range(100_001, 100_000).ToArray(),
+                Enumerable.Range(200_001, 50_000).ToArray()));
+        }
+        finally
+        {
+            Console.SetOut(originalOutput);
+        }
+
+        var lines = output.ToString()
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Collection(
+            lines,
+            line => Assert.Matches(@"^\[FastBulkProcessor\] CompletedRows=100000; ElapsedMs=\d+(\.\d+)?; RowsPerSecond=\d+(\.\d+)?$", line),
+            line => Assert.Matches(@"^\[FastBulkProcessor\] CompletedRows=100000; ElapsedMs=\d+(\.\d+)?; RowsPerSecond=\d+(\.\d+)?$", line),
+            line => Assert.Matches(@"^\[FastBulkProcessor\] CompletedRows=50000; ElapsedMs=\d+(\.\d+)?; RowsPerSecond=\d+(\.\d+)?$", line));
+    }
+
     private sealed class TrackingBulkWriteSessionFactory(
         IBulkWriteSession<int> session) : IBulkWriteSessionFactory<int>
     {
@@ -135,6 +241,38 @@ public class BulkWriterTests
             cancellationToken.ThrowIfCancellationRequested();
             ReadCount++;
             yield return new[] { 4, 5 };
+        }
+    }
+
+    private sealed class CompletedBulkWriteSession : IBulkWriteSession<int>
+    {
+        public ValueTask WriteBatchAsync(
+            IReadOnlyList<int> batch,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<IReadOnlyList<int>> ReadSingleBatchAsync(
+        int count,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        yield return Enumerable.Range(1, count).ToArray();
+        await Task.CompletedTask;
+    }
+
+    private static async IAsyncEnumerable<IReadOnlyList<int>> ReadBatchesAsync(
+        params IReadOnlyList<int>[] batches)
+    {
+        foreach (var batch in batches)
+        {
+            yield return batch;
+            await Task.CompletedTask;
         }
     }
 }

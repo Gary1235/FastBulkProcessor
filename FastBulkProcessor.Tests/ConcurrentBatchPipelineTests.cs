@@ -200,22 +200,33 @@ public sealed class ConcurrentBatchPipelineTests
     }
 
     /// <summary>
-    /// 驗證 Prepare delegate 失敗時傳回原始例外，且所有尚未提交的批次都立即停止。
+    /// Verifies that a later Prepare failure prevents an earlier, still-preparing batch from reaching Commit.
     /// </summary>
     [Fact]
-    public async Task RunAsync_Prepare失敗_傳回原始例外並停止所有尚未提交批次()
+    public async Task RunAsync_LaterPrepareFails_StopsAllUncommittedBatches()
     {
-        var expectedException = new InvalidOperationException("Mapping 失敗。");
+        var expectedException = new InvalidOperationException("Mapping failed.");
+        var firstPrepareStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var committedValues = new List<int>();
         var options = new ConcurrentBatchPipelineOptions(1, 2, 2, 2);
         var sut = new ConcurrentBatchPipeline<int, int>(options);
 
         var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
             () => sut.RunAsync(
-                ReadValuesAsync(1, 2, 3, 4),
-                (batch, _) => batch[0] == 2
-                    ? ValueTask.FromException<int>(expectedException)
-                    : ValueTask.FromResult(batch[0]),
+                ReadValuesAsync(1, 2),
+                async (batch, cancellationToken) =>
+                {
+                    if (batch[0] == 1)
+                    {
+                        firstPrepareStarted.SetResult();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                        return batch[0];
+                    }
+
+                    await firstPrepareStarted.Task.WaitAsync(cancellationToken);
+                    throw expectedException;
+                },
                 (value, _) =>
                 {
                     committedValues.Add(value);
@@ -226,6 +237,47 @@ public sealed class ConcurrentBatchPipelineTests
         Assert.Empty(committedValues);
     }
 
+    /// <summary>
+    /// Verifies that a later Prepare failure does not roll back an earlier batch that has already committed.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_LaterPrepareFails_PreservesAlreadyCommittedBatch()
+    {
+        var expectedException = new InvalidOperationException("Second batch mapping failed.");
+        var firstBatchCommitted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var committedValues = new List<int>();
+        var options = new ConcurrentBatchPipelineOptions(1, 2, 2, 2);
+        var sut = new ConcurrentBatchPipeline<int, int>(options);
+
+        var actualException = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.RunAsync(
+                ReadValuesAsync(1, 2),
+                async (batch, cancellationToken) =>
+                {
+                    if (batch[0] == 1)
+                    {
+                        return batch[0];
+                    }
+
+                    await firstBatchCommitted.Task.WaitAsync(cancellationToken);
+                    throw expectedException;
+                },
+                (value, _) =>
+                {
+                    committedValues.Add(value);
+
+                    if (value == 1)
+                    {
+                        firstBatchCommitted.SetResult();
+                    }
+
+                    return ValueTask.CompletedTask;
+                }));
+
+        Assert.Same(expectedException, actualException);
+        Assert.Equal([1], committedValues);
+    }
     /// <summary>
     /// 驗證 Commit 失敗時會取消並等待其他背景 Prepare 結束，再將原始例外傳回應用端。
     /// </summary>

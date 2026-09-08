@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace FastBulkProcessor;
 
 /// <summary>
@@ -23,6 +25,8 @@ public interface IBulkWriter<T>
 /// <typeparam name="T">每筆目標資料的型別。</typeparam>
 public sealed class BulkWriter<T> : IBulkWriter<T>
 {
+    private const long ProgressReportIntervalRows = 100_000;
+
     private readonly IBulkWriteSessionFactory<T> _sessionFactory;
 
     /// <summary>
@@ -50,21 +54,51 @@ public sealed class BulkWriter<T> : IBulkWriter<T>
 
         long writtenRowCount = 0;
         var writtenBatchCount = 0;
+        long intervalWrittenRowCount = 0;
+        long intervalStartedAt = 0;
 
         await foreach (var batch in batches
                            .WithCancellation(cancellationToken)
                            .ConfigureAwait(false))
         {
+            if (intervalWrittenRowCount == 0)
+            {
+                intervalStartedAt = Stopwatch.GetTimestamp();
+            }
+
             await session
                 .WriteBatchAsync(batch, cancellationToken)
                 .ConfigureAwait(false);
 
             writtenRowCount += batch.Count;
             writtenBatchCount++;
+            intervalWrittenRowCount += batch.Count;
+
+            if (intervalWrittenRowCount >= ProgressReportIntervalRows)
+            {
+                WriteProgress(intervalWrittenRowCount, intervalStartedAt);
+
+                intervalWrittenRowCount = 0;
+            }
+        }
+
+        if (intervalWrittenRowCount > 0)
+        {
+            WriteProgress(intervalWrittenRowCount, intervalStartedAt);
         }
 
         return new BulkWriteResult(
             writtenRowCount,
             writtenBatchCount);
+    }
+
+    private static void WriteProgress(long completedRows, long intervalStartedAt)
+    {
+        var elapsed = Stopwatch.GetElapsedTime(intervalStartedAt);
+        var rowsPerSecond = completedRows / elapsed.TotalSeconds;
+
+        Console.WriteLine(
+            FormattableString.Invariant(
+                $"[FastBulkProcessor] CompletedRows={completedRows}; ElapsedMs={elapsed.TotalMilliseconds:F3}; RowsPerSecond={rowsPerSecond:F3}"));
     }
 }
