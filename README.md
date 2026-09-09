@@ -79,6 +79,8 @@ Console.WriteLine(
 
 `GetAcceptedTargetsAsync` 由應用端實作；不通過規則的資料應由應用端自行記錄 Rejection。
 
+`BulkWriter.WriteAsync` 每寫入約 100,000 筆資料，以及作業結束時的剩餘資料，都會輸出一行進度到 `Console.Out`，內容包含該區間的完成筆數、耗時與每秒筆數。若應用程式需要集中式記錄、告警或更細緻的效能監控，仍應自行處理。
+
 ## 外部 Transaction
 
 若單一來源批次需要保證 `Bulk insert + Rejection + Checkpoint` 原子提交，應用端建立並持有 Transaction：
@@ -108,19 +110,10 @@ await transaction.CommitAsync(cancellationToken);
 
 ## 並行 Prepare Pipeline
 
-`ConcurrentBatchPipeline<TSource, TPrepared>` 負責資料流控制：來源資料預讀、有限度並行 Prepare，以及循序 Commit。
+以 `BulkWorkflow<TSource, TPrepared>` 定義來源、Prepare 與 Commit，再以 `BulkProcessor.ExecuteAsync` 執行，是並行 Prepare Pipeline 的建議入口。它會處理來源資料預讀、有限度並行 Prepare，以及循序 Commit。
 
 ```csharp
-var options = new ConcurrentBatchPipelineOptions(
-    batchSize: 2_000,
-    sourceBufferCapacity: 2,
-    preparedBufferCapacity: 2,
-    maxPrepareConcurrency: 2);
-
-var pipeline = new ConcurrentBatchPipeline<SourceCustomer, PreparedBatch>(
-    options);
-
-await pipeline.RunAsync(
+var workflow = new BulkWorkflow<SourceCustomer, PreparedBatch>(
     source: sourceReader.ReadAsync(cancellationToken),
 
     prepareAsync: async (sourceBatch, token) =>
@@ -133,12 +126,23 @@ await pipeline.RunAsync(
     {
         // 應用端：每批建立 Transaction，完成 Bulk、Rejection、Checkpoint。
         await initializationWriter.CommitAsync(preparedBatch, token);
-    },
+    });
 
+var options = new BulkExecutionOptions(
+    batchSize: 2_000,
+    preparationConcurrency: 2,
+    sourceBufferCapacity: 2,
+    preparedBufferCapacity: 2);
+
+await BulkProcessor.ExecuteAsync(
+    workflow,
+    options,
     cancellationToken: cancellationToken);
 ```
 
 Prepare 可以並行，但 Commit 固定依來源批次順序執行。任一 Prepare 失敗時，Pipeline 會取消所有尚未提交的批次，等待背景 Prepare 結束後，再傳回原始例外。
+
+若需要直接控制底層 Pipeline，可使用 `ConcurrentBatchPipeline<TSource, TPrepared>` 與 `ConcurrentBatchPipelineOptions`；一般應用程式不需要直接建立它們。
 
 `prepareAsync` 若需要資料庫或 EF Core，請確保每個並行工作使用獨立且 thread-safe 的 Connection/DbContext；不可多個 Worker 共用同一個 `DbContext`。
 
@@ -211,4 +215,4 @@ dotnet test FastBulkProcessor.slnx --filter "Category=Integration"
 | ADO 串流、批次、Backpressure | Dictionary、Mapping、BusinessRule |
 | BulkCopy 與外部 Transaction 配合 | Rejection、Checkpoint、High-water mark |
 | Prepare 併發與循序 Commit | 初始化鎖、重跑與冪等策略 |
-| Cancellation、例外傳遞與資源釋放 | 實際交易內容與效能監控 |
+| Cancellation、例外傳遞、資源釋放與基本寫入進度輸出 | 實際交易內容、集中式監控與告警 |
