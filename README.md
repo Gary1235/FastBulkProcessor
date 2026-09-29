@@ -16,7 +16,7 @@
 
 ## 環境需求
 
-- .NET 9 或 .NET 10。
+- .NET 9 或 .NET 10。若要在本機執行全部測試，需同時安裝兩個版本的 Runtime。
 - SQL Server。
 - `Microsoft.Data.SqlClient` 7.0.2（由 Library 相依套件提供）。
 
@@ -80,6 +80,17 @@ Console.WriteLine(
 `GetAcceptedTargetsAsync` 由應用端實作；不通過規則的資料應由應用端自行記錄 Rejection。
 
 `BulkWriter.WriteAsync` 每寫入約 100,000 筆資料，以及作業結束時的剩餘資料，都會輸出一行進度到 `Console.Out`，內容包含該區間的完成筆數、耗時與每秒筆數。若應用程式需要集中式記錄、告警或更細緻的效能監控，仍應自行處理。
+
+函式庫也透過 `System.Diagnostics.Metrics` 的 `FastBulkProcessor` Meter 發出下列指標；應用端可用 `MeterListener` 或 OpenTelemetry 收集，不需要使用儀表板 Runner：
+
+| 指標名稱 | 意義 |
+| --- | --- |
+| `fastbulkprocessor.write.rows` | 成功完成 `WriteBatchAsync` 的筆數 |
+| `fastbulkprocessor.write.batches` | 成功完成 `WriteBatchAsync` 的批次數 |
+| `fastbulkprocessor.write.batch.duration` | 每批寫入耗時，單位毫秒 |
+| `fastbulkprocessor.write.batch.failures` | 批次寫入失敗次數，不包含取消 |
+
+這些指標記錄 `BulkWriter` 的寫入結果；若應用端之後回滾外部交易，已計入的筆數不會扣回。Session 建立失敗及應用端的 Rejection/Checkpoint 也不包含在內。
 
 ## 外部 Transaction
 
@@ -146,6 +157,41 @@ Prepare 可以並行，但 Commit 固定依來源批次順序執行。任一 Pre
 
 `prepareAsync` 若需要資料庫或 EF Core，請確保每個並行工作使用獨立且 thread-safe 的 Connection/DbContext；不可多個 Worker 共用同一個 `DbContext`。
 
+## 簡易儀表板
+
+ASP.NET Core 應用端可引用 `FastBulkProcessor.Dashboard` 專案，使用已設定的 Authentication/Authorization，並掛載唯讀頁面：
+
+```csharp
+using FastBulkProcessor.Dashboard;
+
+builder.Services.AddFastBulkProcessorDashboard();
+
+// 在 app 建立後，並於應用程式設定好 Authentication/Authorization 後：
+app.MapFastBulkProcessorDashboard("/bulk-dashboard");
+```
+
+所有 Dashboard 端點都要求已登入使用者；應用端也可對回傳的 `RouteGroupBuilder` 加上更嚴格的授權政策。開啟 `/bulk-dashboard` 可查看執行中與最近完成的作業。要讓作業出現在頁面上，請透過 DI 取得 `BulkDashboardRunner` 執行：
+
+```csharp
+await dashboardRunner.RunWorkflowAsync(
+    "Customer import", workflow, options, cancellationToken);
+
+// 直接 Bulk 寫入時：
+await dashboardRunner.RunWriteAsync(
+    "Customer write", batches.ReadAsync(cancellationToken),
+    sessionFactory, cancellationToken);
+```
+
+儀表板會顯示狀態、已完成批次、筆數、耗時、速度及錯誤摘要。Workflow 的筆數是已提交的來源筆數；直接 Bulk 寫入的筆數是已完成寫入的筆數。狀態只保存在目前程序的記憶體，最多保留最近 100 個已結束作業；重啟或多個應用實例不共享歷史。完成百分比需由應用端提供來源總量，目前不顯示。
+
+若要先看實際頁面，可啟動只接受本機連線的範例：
+
+```powershell
+dotnet run --project FastBulkProcessor.Dashboard.Sample --framework net10.0 -- --urls http://127.0.0.1:5057
+```
+
+開啟 `http://127.0.0.1:5057/`，先點「登入範例」，再點「執行示範作業」；完成後會進入 `/bulk-dashboard`。範例的本機自動登入僅供示範，正式應用請沿用自己的 Authentication/Authorization。
+
 ## ADO.NET 串流讀取
 
 `AdoStreamingReader<T>` 以 `DbDataReader` 和 `CommandBehavior.SequentialAccess` 執行來源資料串流：
@@ -199,6 +245,8 @@ Windows PowerShell 設定範例：
 ```powershell
 dotnet test FastBulkProcessor.slnx
 ```
+
+測試專案同時針對 .NET 9 與 .NET 10 執行；GitHub Actions 也會在 Push 與 Pull Request 時執行兩個版本的測試。本機若只有其中一個 Runtime，可在測試專案使用 `--framework net9.0` 或 `--framework net10.0` 指定版本。
 
 只執行 SQL Server 整合測試：
 

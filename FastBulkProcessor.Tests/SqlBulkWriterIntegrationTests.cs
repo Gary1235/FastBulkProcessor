@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Data;
 using Microsoft.Data.SqlClient;
-using Xunit.Sdk;
 
 namespace FastBulkProcessor.Tests;
 
@@ -16,7 +15,7 @@ public sealed class SqlBulkWriterIntegrationTests
     /// <summary>
     /// 驗證應用端提供的五筆有效資料會分成兩批寫入，並能從 SQL Server 完整查回。
     /// </summary>
-    [Fact]
+    [SqlServerFact]
     [Trait("Category", "Integration")]
     public async Task WriteAsync_五筆有效資料分成兩批_資料與統計皆正確()
     {
@@ -90,7 +89,7 @@ public sealed class SqlBulkWriterIntegrationTests
     /// 驗證使用應用端外部交易寫入後，Library 不會關閉連線或提交交易，
     /// 且應用端回滾後資料不會留在目的資料表。
     /// </summary>
-    [Fact]
+    [SqlServerFact]
     [Trait("Category", "Integration")]
     public async Task WriteAsync_使用外部交易後由應用端回滾_資料不存在且連線保持開啟()
     {
@@ -155,7 +154,7 @@ public sealed class SqlBulkWriterIntegrationTests
     /// <summary>
     /// 驗證外部交易模式不得同時指定 UseInternalTransaction，避免 SqlBulkCopy 使用衝突的交易策略。
     /// </summary>
-    [Fact]
+    [SqlServerFact]
     [Trait("Category", "Integration")]
     public async Task Constructor_外部交易搭配內部交易選項_拋出參數例外()
     {
@@ -188,7 +187,7 @@ public sealed class SqlBulkWriterIntegrationTests
     /// <summary>
     /// 驗證外部 Transaction 不屬於指定 Connection 時立即拒絕建立工廠。
     /// </summary>
-    [Fact]
+    [SqlServerFact]
     [Trait("Category", "Integration")]
     public async Task Constructor_外部交易不屬於指定連線_拋出參數例外()
     {
@@ -232,13 +231,8 @@ public sealed class SqlBulkWriterIntegrationTests
                 EnvironmentVariableTarget.User);
         }
 
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw SkipException.ForSkip(
-                $"未設定環境變數 {ConnectionStringEnvironmentVariable}，略過 SQL Server 整合測試。");
-        }
-
-        return connectionString;
+        return connectionString ?? throw new InvalidOperationException(
+            $"未設定環境變數 {ConnectionStringEnvironmentVariable}。");
     }
 
     private static async Task ExecuteNonQueryAsync(

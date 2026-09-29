@@ -1,4 +1,6 @@
 <Solution>
+  <Project Path="FastBulkProcessor.Dashboard.Sample/FastBulkProcessor.Dashboard.Sample.csproj" />
+  <Project Path="FastBulkProcessor.Dashboard/FastBulkProcessor.Dashboard.csproj" />
   <Project Path="FastBulkProcessor.Tests/FastBulkProcessor.Tests.csproj" />
   <Project Path="FastBulkProcessor/FastBulkProcessor.csproj" />
 </Solution>

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -19,6 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\FastBulkProcessor.Dashboard.Sample\FastBulkProcessor.Dashboard.Sample.csproj" />
+    <ProjectReference Include="..\FastBulkProcessor.Dashboard\FastBulkProcessor.Dashboard.csproj" />
     <ProjectReference Include="..\FastBulkProcessor\FastBulkProcessor.csproj" />
   </ItemGroup>
 

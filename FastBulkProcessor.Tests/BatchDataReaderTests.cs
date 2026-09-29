@@ -58,6 +58,37 @@ public class BatchDataReaderTests
         Assert.True(sut.IsDBNull(0));
     }
 
+    [Fact]
+    public void GetBytes_偏移超過資料長度_回傳零且不修改緩衝區()
+    {
+        byte[] value = [1, 2, 3];
+        BulkColumn<byte[]>[] columns =
+        [
+            BulkColumn<byte[]>.Create("Payload", item => item)
+        ];
+        using var sut = new BatchDataReader<byte[]>([value], columns);
+        var buffer = new byte[] { 9, 9 };
+
+        Assert.True(sut.Read());
+        Assert.Equal(0, sut.GetBytes(0, 4, buffer, 0, buffer.Length));
+        Assert.Equal([9, 9], buffer);
+    }
+
+    [Fact]
+    public void GetChars_偏移超過資料長度_回傳零且不修改緩衝區()
+    {
+        BulkColumn<string>[] columns =
+        [
+            BulkColumn<string>.Create("Text", item => item)
+        ];
+        using var sut = new BatchDataReader<string>(["abc"], columns);
+        var buffer = new[] { 'x', 'x' };
+
+        Assert.True(sut.Read());
+        Assert.Equal(0, sut.GetChars(0, 4, buffer, 0, buffer.Length));
+        Assert.Equal(['x', 'x'], buffer);
+    }
+
     private sealed record TargetCustomer(int Id, string? Name);
 
     private sealed record NullableTarget(int? OrgId);

@@ -35,6 +35,7 @@ public sealed class BulkWriter<T> : IBulkWriter<T>
     /// <param name="sessionFactory">用來建立單次寫入作業 session 的工廠。</param>
     public BulkWriter(IBulkWriteSessionFactory<T> sessionFactory)
     {
+        ArgumentNullException.ThrowIfNull(sessionFactory);
         _sessionFactory = sessionFactory;
     }
 
@@ -48,6 +49,8 @@ public sealed class BulkWriter<T> : IBulkWriter<T>
         IAsyncEnumerable<IReadOnlyList<T>> batches,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(batches);
+
         await using var session = await _sessionFactory
             .OpenAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -66,9 +69,23 @@ public sealed class BulkWriter<T> : IBulkWriter<T>
                 intervalStartedAt = Stopwatch.GetTimestamp();
             }
 
-            await session
-                .WriteBatchAsync(batch, cancellationToken)
-                .ConfigureAwait(false);
+            var batchStartedAt = Stopwatch.GetTimestamp();
+            try
+            {
+                await session
+                    .WriteBatchAsync(batch, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                BulkMetrics.BatchFailures.Add(1);
+                throw;
+            }
+
+            BulkMetrics.WrittenRows.Add(batch.Count);
+            BulkMetrics.WrittenBatches.Add(1);
+            BulkMetrics.BatchDuration.Record(
+                Stopwatch.GetElapsedTime(batchStartedAt).TotalMilliseconds);
 
             writtenRowCount += batch.Count;
             writtenBatchCount++;

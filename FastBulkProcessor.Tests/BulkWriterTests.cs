@@ -4,6 +4,29 @@ namespace FastBulkProcessor.Tests;
 
 public class BulkWriterTests
 {
+    [Fact]
+    public void Constructor_SessionFactory為Null_擲出參數例外()
+    {
+        var exception = Assert.Throws<ArgumentNullException>(
+            () => new BulkWriter<int>(null!));
+
+        Assert.Equal("sessionFactory", exception.ParamName);
+    }
+
+    [Fact]
+    public async Task WriteAsync_Batches為Null_不開啟Session並擲出參數例外()
+    {
+        var sessionFactory = new TrackingBulkWriteSessionFactory(
+            new CompletedBulkWriteSession());
+        var sut = new BulkWriter<int>(sessionFactory);
+
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(
+            async () => await sut.WriteAsync(null!));
+
+        Assert.Equal("batches", exception.ParamName);
+        Assert.Equal(0, sessionFactory.OpenCount);
+    }
+
     /// <summary>
     /// 驗證第一批資料寫入完成前不會預先讀取下一批，並在全部寫入後回傳正確的批次與資料筆數。
     /// </summary>

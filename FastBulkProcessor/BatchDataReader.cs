@@ -125,6 +125,11 @@ internal sealed class BatchDataReader<T> : DbDataReader
             return value.LongLength;
         }
 
+        if (dataOffset >= value.LongLength)
+        {
+            return 0;
+        }
+
         var copyLength = Math.Min(length, value.Length - checked((int)dataOffset));
         Array.Copy(value, dataOffset, buffer, bufferOffset, copyLength);
         return copyLength;
@@ -144,6 +149,11 @@ internal sealed class BatchDataReader<T> : DbDataReader
         if (buffer is null)
         {
             return value.Length;
+        }
+
+        if (dataOffset >= value.Length)
+        {
+            return 0;
         }
 
         var copyLength = Math.Min(length, value.Length - checked((int)dataOffset));
