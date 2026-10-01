@@ -15,4 +15,30 @@ jobs:
             9.0.x
             10.0.x
       - run: dotnet restore FastBulkProcessor.slnx
-      - run: dotnet test FastBulkProcessor.slnx --no-restore
+      - name: Test with disposable SQL Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql_password="A1!$(openssl rand -hex 24)"
+          echo "::add-mask::$sql_password"
+          docker run -d --name fast-bulk-processor-sql \
+            -e ACCEPT_EULA=Y \
+            -e "MSSQL_SA_PASSWORD=$sql_password" \
+            -p 127.0.0.1:1433:1433 \
+            mcr.microsoft.com/mssql/server:2022-latest
+          trap 'docker rm -f fast-bulk-processor-sql >/dev/null' EXIT
+
+          for attempt in {1..90}; do
+            if docker exec fast-bulk-processor-sql \
+              /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$sql_password" \
+              -C -b -Q 'SELECT 1' >/dev/null 2>&1; then
+              export FAST_BULK_PROCESSOR_SQL_CONNECTION_STRING="Server=127.0.0.1,1433;Database=master;User Id=sa;Password=$sql_password;Encrypt=True;TrustServerCertificate=True"
+              dotnet test FastBulkProcessor.slnx --no-restore
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs fast-bulk-processor-sql
+          echo 'SQL Server did not become ready in time.' >&2
+          exit 1

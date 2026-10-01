@@ -225,7 +225,7 @@ SQL Server 整合測試只讀取下列環境變數：
 FAST_BULK_PROCESSOR_SQL_CONNECTION_STRING
 ```
 
-請將它設為具備測試資料庫權限的連線字串。不要把真實連線字串寫入 README、原始碼、`appsettings.json` 或 Git。
+本機執行時，請將它設為具備測試資料庫權限的連線字串。不要把真實連線字串寫入 README、原始碼、`appsettings.json` 或 Git。
 
 Windows PowerShell 設定範例：
 
@@ -246,7 +246,7 @@ Windows PowerShell 設定範例：
 dotnet test FastBulkProcessor.slnx
 ```
 
-測試專案同時針對 .NET 9 與 .NET 10 執行；GitHub Actions 也會在 Push 與 Pull Request 時執行兩個版本的測試。本機若只有其中一個 Runtime，可在測試專案使用 `--framework net9.0` 或 `--framework net10.0` 指定版本。
+測試專案同時針對 .NET 9 與 .NET 10 執行；GitHub Actions 在 Push 與 Pull Request 時會產生一次性密碼、啟動 SQL Server 2022 容器，並在兩個版本執行全部測試（包含 SQL Server 整合測試）。容器在測試結束後刪除，不需提供本機或正式資料庫的連線字串。本機若只有其中一個 Runtime，可在測試專案使用 `--framework net9.0` 或 `--framework net10.0` 指定版本。
 
 只執行 SQL Server 整合測試：
 
