@@ -54,24 +54,44 @@ public static class BulkDashboardEndpointExtensions
           <title>FastBulkProcessor Dashboard</title>
           <style>
             :root { font-family: system-ui, sans-serif; color: #1f2937; background: #f4f6f8; }
-            body { max-width: 1180px; margin: 0 auto; padding: 32px 20px; }
-            h1 { margin: 0 0 4px; font-size: 1.7rem; }
-            p { color: #6b7280; }
-            .summary { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
-            .summary div { background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 18px; min-width: 110px; }
-            .summary strong { display: block; font-size: 1.4rem; }
+            * { box-sizing: border-box; }
+            body { margin: 0; padding: clamp(16px, 2.5vw, 40px); }
+            h1 { margin: 0 0 8px; font-size: clamp(1.35rem, 2.2vw, 1.9rem); overflow-wrap: anywhere; }
+            p { margin: 0; color: #6b7280; line-height: 1.7; }
+            .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+            .summary div { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 6px #1f293705; }
+            .summary strong { display: block; font-size: 1.75rem; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
             .summary span { color: #6b7280; font-size: .85rem; }
             .card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; overflow-x: auto; }
-            table { width: 100%; border-collapse: collapse; min-width: 760px; }
-            th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-            th { color: #6b7280; font-size: .8rem; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 18px 20px; text-align: left; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
+            td { font-variant-numeric: tabular-nums; }
+            th { color: #6b7280; background: #f9fafb; font-size: .8rem; font-weight: 600; }
             tr:last-child td { border-bottom: 0; }
             .status { font-weight: 700; }
             .Running { color: #1d4ed8; }
             .Succeeded { color: #15803d; }
             .Failed { color: #b91c1c; }
             .Canceled { color: #6b7280; }
-            .error { max-width: 300px; overflow-wrap: anywhere; color: #b91c1c; }
+            .error { min-width: 100px; max-width: 300px; white-space: normal; overflow-wrap: anywhere; color: #b91c1c; }
+            @media (max-width: 1024px) {
+              th, td { padding: 14px 16px; }
+              .summary { gap: 12px; }
+            }
+            @media (max-width: 640px) {
+              .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 20px 0; }
+              .summary div { padding: 14px 16px; }
+              .card { background: transparent; border: 0; border-radius: 0; overflow: visible; }
+              table, tbody { display: block; width: 100%; }
+              thead { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
+              tr { display: block; background: white; border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 12px; padding: 8px 16px; }
+              td, tr:last-child td { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f2f5; white-space: normal; overflow-wrap: anywhere; }
+              td::before { content: attr(data-label); color: #6b7280; font-size: .8rem; font-weight: 400; }
+              td:last-child, tr:last-child td:last-child { border-bottom: 0; }
+              td.error { min-width: 0; max-width: none; }
+              td[colspan] { display: block; }
+              td[colspan]::before { content: none; }
+            }
           </style>
         </head>
         <body>
@@ -84,8 +104,8 @@ public static class BulkDashboardEndpointExtensions
             <div><strong id="canceled">0</strong><span>已取消</span></div>
           </div>
           <div class="card">
-            <table>
-              <thead><tr><th>作業</th><th>狀態</th><th>已處理筆數</th><th>批次</th><th>耗時</th><th>筆／秒</th><th>開始時間</th><th>錯誤</th></tr></thead>
+            <table aria-label="作業狀態">
+              <thead><tr><th scope="col">作業</th><th scope="col">狀態</th><th scope="col">已處理筆數</th><th scope="col">批次</th><th scope="col">耗時</th><th scope="col">筆／秒</th><th scope="col">開始時間</th><th scope="col">錯誤</th></tr></thead>
               <tbody id="jobs"><tr><td colspan="8">載入中…</td></tr></tbody>
             </table>
           </div>
@@ -93,6 +113,7 @@ public static class BulkDashboardEndpointExtensions
             const body = document.getElementById('jobs');
             const statuses = ['Running', 'Succeeded', 'Failed', 'Canceled'];
             const labels = ['執行中', '已完成', '失敗', '已取消'];
+            const columns = Array.from(document.querySelectorAll('thead th'), header => header.textContent);
             const api = location.pathname.replace(/\/$/, '') + '/jobs';
             async function refresh() {
               try {
@@ -122,7 +143,11 @@ public static class BulkDashboardEndpointExtensions
                     new Date(job.startedAt).toLocaleString(),
                     job.error ?? ''
                   ];
-                  for (const value of cells) row.insertCell().textContent = value;
+                  for (const [index, value] of cells.entries()) {
+                    const cell = row.insertCell();
+                    cell.dataset.label = columns[index];
+                    cell.textContent = value;
+                  }
                   row.cells[1].className = `status ${statuses[job.status] ?? ''}`;
                   row.cells[7].className = 'error';
                 }
